@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project: Meme Battle</title>
+    <style>
+        body {
+            background-color: #111;
+            color: white;
+            text-align: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        /* Pantalla de Inicio */
+        #menuInicio {
+            position: absolute;
+            width: 100%; height: 100%;
+            background: radial-gradient(circle, #333 0%, #000 100%);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            z-index: 100;
+        }
+
+        #menuInicio h1 {
+            font-size: 70px; color: #FFD700;
+            text-shadow: 4px 4px 15px rgba(0,0,0,0.8);
+            margin-bottom: 10px;
+        }
+
+        .boton-jugar {
+            padding: 20px 60px; font-size: 28px; font-weight: bold;
+            background-color: #FFD700; color: #111;
+            border: none; border-radius: 50px; cursor: pointer;
+            transition: transform 0.2s, background-color 0.2s;
+        }
+
+        .boton-jugar:hover { transform: scale(1.1); background-color: #fff; }
+
+        /* Video */
+        #videoContainer {
+            position: absolute; width: 100%; height: 100%;
+            background: black; display: none; z-index: 90;
+        }
+
+        video { width: 100%; height: 100%; object-fit: contain; }
+
+        #skipButton {
+            position: absolute; bottom: 30px; right: 30px;
+            padding: 10px 20px; background: rgba(255,255,255,0.2);
+            color: white; border: 1px solid white; cursor: pointer;
+        }
+
+        /* Área de Juego */
+        #gameArea {
+            display: none; flex-direction: column; align-items: center;
+            padding-top: 10px;
+        }
+
+        canvas {
+            border: 5px solid #fff; border-radius: 10px;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.3);
+            background-color: #fff;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 1. MENÚ -->
+    <div id="menuInicio">
+        <h1>Project: Meme Battle</h1>
+        <button class="boton-jugar" onclick="iniciarHistoria()">JUGAR</button>
+        <p style="color: #888; margin-top: 15px;">Moverse: Flechas | Atacar: Espacio | Doge: Tecla D</p>
+    </div>
+
+    <!-- 2. VIDEO -->
+    <div id="videoContainer">
+        <video id="introVideo">
+            <source src="historia.mp4" type="video/mp4">
+        </video>
+        <button id="skipButton" onclick="terminarVideo()">SALTAR ➔</button>
+    </div>
+
+    <!-- 3. JUEGO -->
+    <div id="gameArea">
+        <h2 style="color: #FFD700; margin: 5px;">Project: Meme Battle</h2>
+        <canvas id="gameCanvas" width="900" height="450"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const video = document.getElementById("introVideo");
+
+        // --- CARGA DE ASSETS ---
+        const imgPlayer = new Image(); imgPlayer.src = "epicface.png";
+        const imgChicken = new Image(); imgChicken.src = "chicken.png";
+        const imgEnemy = new Image(); imgEnemy.src = "enemigo.png";
+        const imgDoge = new Image(); imgDoge.src = "doge.png";
+        const imgRickroll = new Image(); imgRickroll.src = "rickroll.png";
+
+        const sndSpawn = new Audio("chicken.m4a");
+        const sndWin = new Audio("vencer.m4a");
+        const musica = new Audio("musica.mp3");
+        musica.loop = true; // La música se repite
+
+        // --- LÓGICA DE ESTADOS ---
+        function iniciarHistoria() {
+            document.getElementById("menuInicio").style.display = "none";
+            document.getElementById("videoContainer").style.display = "block";
+            video.play();
+            video.onended = terminarVideo;
+        }
+
+        function terminarVideo() {
+            video.pause();
+            document.getElementById("videoContainer").style.display = "none";
+            document.getElementById("gameArea").style.display = "flex";
+            musica.play(); // EMPIEZA LA MÚSICA AQUÍ
+            iniciarJuego();
+        }
+
+        // --- VARIABLES DEL JUEGO ---
+        const groundY = 320;
+        let nivel = 1;
+        let enemigosDerrotados = 0;
+        let metaParaJefe = 20;
+        let jefeAparecio = false;
+        let dogeDesbloqueado = false;
+        let mensajeTexto = "";
+        let mensajeTimer = 0;
+
+        const player = { x: 50, y: groundY - 120, width: 120, height: 120, speed: 6 };
+        let pollos = [];
+        let enemigos = [];
+        let doges = [];
+
+        let lastChicken = 0; const cooldownChicken = 2000;
+        let lastDoge = 0; const cooldownDoge = 4000;
+        let lastEnemy = 0; let nextEnemyTime = 2000;
+
+        let keys = {};
+        window.onkeydown = (e) => {
+            keys[e.code] = true;
+            if (e.code === "Space") dispararPollo();
+            if (e.code === "KeyD") invocarDoge();
+        };
+        window.onkeyup = (e) => keys[e.code] = false;
+
+        function mostrarAviso(txt, t) { mensajeTexto = txt; mensajeTimer = t; }
+
+        function dispararPollo() {
+            const ahora = Date.now();
+            if (ahora - lastChicken < cooldownChicken) return;
+            lastChicken = ahora;
+            pollos.push({ x: player.x + 80, y: groundY - 80, width: 70, height: 70, speed: 3.5, damage: 2 });
+            sndSpawn.currentTime = 0; sndSpawn.play().catch(()=>{});
+        }
+
+        function invocarDoge() {
+            if (!dogeDesbloqueado) return;
+            const ahora = Date.now();
+            if (ahora - lastDoge < cooldownDoge) return;
+            lastDoge = ahora;
+            doges.push({ x: player.x + 40, y: groundY - 85, width: 85, height: 85, hp: 15, maxHp: 15, speed: 2.2, baseSpeed: 2.2, damage: 3, lastAtk: 0, dead: false });
+        }
+
+        function spawnManager() {
+            if (jefeAparecio) return;
+            if (enemigosDerrotados >= metaParaJefe) {
+                jefeAparecio = true;
+                mostrarAviso("¡JEFE: RICKROLL!", 150);
+                enemigos.push({ x: canvas.width, y: groundY - 180, width: 140, height: 180, hp: 60, maxHp: 60, speed: 0.4, baseSpeed: 0.4, damage: 5, lastAtk: 0, esJefe: true, dead: false });
+                return;
+            }
+            const ahora = Date.now();
+            if (ahora - lastEnemy > nextEnemyTime) {
+                lastEnemy = ahora;
+                nextEnemyTime = 2000 + Math.random() * 2500;
+                enemigos.push({ x: canvas.width, y: groundY - 105, width: 80, height: 105, hp: 6, maxHp: 6, speed: 0.6 + Math.random() * 0.5, baseSpeed: 0.6, damage: 2, lastAtk: 0, esJefe: false, dead: false });
+            }
+        }
+
+        function col(a, b) { return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y; }
+
+        function update() {
+            if (enemigosDerrotados >= 10 && !dogeDesbloqueado) { dogeDesbloqueado = true; mostrarAviso("¡DOGE DESBLOQUEADO!", 120); }
+
+            if (keys["ArrowLeft"] && player.x > 0) player.x -= player.speed;
+            if (keys["ArrowRight"] && player.x < canvas.width/2) player.x += player.speed;
+
+            pollos.forEach(p => p.x += p.speed);
+            pollos = pollos.filter(p => p.x < canvas.width);
+
+            doges.forEach(d => d.speed = d.baseSpeed);
+            enemigos.forEach(e => e.speed = e.baseSpeed);
+
+            const ahora = Date.now();
+            doges.forEach(d => {
+                enemigos.forEach(e => {
+                    if (col(d, e)) {
+                        d.speed = 0; e.speed = 0;
+                        if (ahora - d.lastAtk > 1000) { e.hp -= d.damage; d.lastAtk = ahora; if (e.hp <= 0) matar(e); }
+                        if (ahora - e.lastAtk > 1000) { d.hp -= e.damage; e.lastAtk = ahora; if (d.hp <= 0) d.dead = true; }
+                    }
+                });
+            });
+
+            pollos.forEach((p, i) => {
+                enemigos.forEach(e => {
+                    if (!e.dead && col(p, e)) { e.hp -= p.damage; pollos.splice(i, 1); if (e.hp <= 0) matar(e); }
+                });
+            });
+
+            doges = doges.filter(d => !d.dead);
+            enemigos = enemigos.filter(e => !e.dead);
+            spawnManager();
+            doges.forEach(d => d.x += d.speed);
+            enemigos.forEach(e => e.x -= e.speed);
+        }
+
+        function matar(e) {
+            e.dead = true; sndWin.currentTime = 0; sndWin.play().catch(()=>{});
+            if (e.esJefe) {
+                nivel++; enemigosDerrotados = 0; jefeAparecio = false;
+                metaParaJefe += 5; enemigos = []; doges = []; pollos = [];
+                mostrarAviso("NIVEL " + nivel, 180);
+            } else { enemigosDerrotados++; }
+        }
+
+        function drawHP(ent, yOff, rY) {
+            ctx.fillStyle = "red"; ctx.fillRect(ent.x, rY - yOff, ent.width, 7);
+            ctx.fillStyle = "#0f0"; ctx.fillRect(ent.x, rY - yOff, ent.width * (ent.hp/ent.maxHp), 7);
+        }
+
+        function draw() {
+            ctx.fillStyle = "white"; ctx.fillRect(0, 0, canvas.width, groundY);
+            ctx.fillStyle = "#040"; ctx.fillRect(0, groundY, canvas.width, 5);
+            ctx.fillStyle = "#1db954"; ctx.fillRect(0, groundY + 5, canvas.width, canvas.height);
+
+            let pY = player.y; if (keys["ArrowLeft"] || keys["ArrowRight"]) pY -= Math.abs(Math.sin(Date.now()/100))*10;
+            ctx.drawImage(imgPlayer, player.x, pY, player.width, player.height);
+
+            pollos.forEach(p => ctx.drawImage(imgChicken, p.x, p.y - Math.abs(Math.sin(Date.now()/100))*8, p.width, p.height));
+            
+            doges.forEach(d => {
+                let rY = d.y; if (d.speed > 0) rY -= Math.abs(Math.sin(Date.now()/120))*8;
+                ctx.drawImage(imgDoge, d.x, rY, d.width, d.height);
+                drawHP(d, 15, rY);
+            });
+
+            enemigos.forEach(e => {
+                let rY = e.y; if (e.speed > 0) rY -= Math.abs(Math.sin(Date.now()/150))*8;
+                ctx.drawImage(e.esJefe ? imgRickroll : imgEnemy, e.x, rY, e.width, e.height);
+                drawHP(e, 15, rY);
+            });
+
+            // UI
+            ctx.fillStyle = "black"; ctx.font = "bold 18px Arial"; ctx.textAlign = "left";
+            ctx.fillText("NIVEL: " + nivel + " | BAJAS: " + enemigosDerrotados + "/" + metaParaJefe, 20, 30);
+            
+            let rP = Math.min((Date.now() - lastChicken)/cooldownChicken, 1);
+            ctx.fillStyle = "black"; ctx.fillText("POLLO:", 20, 60);
+            ctx.fillRect(90, 48, 60, 12); ctx.fillStyle = rP===1?"cyan":"yellow"; ctx.fillRect(90, 48, 60*rP, 12);
+
+            if (dogeDesbloqueado) {
+                let rD = Math.min((Date.now() - lastDoge)/cooldownDoge, 1);
+                ctx.fillStyle = "black"; ctx.fillText("DOGE:", 170, 60);
+                ctx.fillRect(235, 48, 60, 12); ctx.fillStyle = rD===1?"orange":"#777"; ctx.fillRect(235, 48, 60*rD, 12);
+            }
+
+            if (mensajeTimer > 0) {
+                ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0, 190, canvas.width, 70);
+                ctx.fillStyle = "gold"; ctx.font = "bold 45px Arial"; ctx.textAlign = "center";
+                ctx.fillText(mensajeTexto, canvas.width/2, 240); mensajeTimer--;
+            }
+        }
+
+        let loopSet = false;
+        function iniciarJuego() { if (!loopSet) { loopSet = true; setInterval(() => { update(); draw(); }, 1000/60); } }
+    </script>
+</body>
+</html>
